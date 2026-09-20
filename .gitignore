@@ -1,0 +1,28 @@
+# Python virtual environment
+.venv/
+venv/
+
+# Python cache
+__pycache__/
+*.py[cod]
+
+# Pytest
+.pytest_cache/
+
+# IDE
+.vscode/
+
+# Local participant dataset
+/Bundle/inbox/
+/Bundle/attachments/
+
+# Organizer-only Docker package
+/docker/
+
+# Generated evaluation outputs
+/Bundle/submission.json
+/Bundle/comparison_detail.json
+
+# Environment variables / API keys
+.env
+.env.*
