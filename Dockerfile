@@ -1,24 +1,37 @@
-# Backend for Render: Express API + review screen (Node) and the team's Python stages (A, C).
+# Backend for Render: Express API + review screen (Node)
+# and the team's Python stages.
+
 FROM node:22-slim
 
 RUN apt-get update \
- && apt-get install -y --no-install-recommends python3 python3-pip \
- && rm -rf /var/lib/apt/lists/*
+    && apt-get install -y --no-install-recommends python3 python3-pip \
+    && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
+# Root Node dependencies
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev
 
+# Task B reader dependencies
+# Keep dev dependencies because TypeScript is needed to build reader/lib/
+COPY reader/package.json reader/package-lock.json ./reader/
+RUN cd reader && npm ci
+
+# Python dependencies
 COPY requirements.txt ./
 RUN pip3 install --no-cache-dir --break-system-packages -r requirements.txt
 
+# Copy application source
 COPY . .
 
-# Public, results-only demo. The organisers' emails and attachments are NOT in this image
-# (see .dockerignore); deploy/results-seed.json holds the processed results for all 520
-# emails, made with scripts/make-public-seed.mjs (no document text, one evidence line per field).
-# Secrets (GEMINI_API_KEY) and CORS_ORIGINS are set in the Render dashboard, never here.
+# Build Task B TypeScript reader into reader/lib/
+RUN cd reader && npm run build
+
+# Public, results-only demo.
+# Raw organiser emails and attachments are excluded by .dockerignore.
+# deploy/results-seed.json contains the sanitised processed results.
+
 ENV NODE_ENV=production \
     PUBLIC_DEMO=1 \
     PIPELINE_DATA=Bundle \
@@ -29,4 +42,5 @@ ENV NODE_ENV=production \
     PYTHON=python3
 
 EXPOSE 3000
+
 CMD ["node", "--no-deprecation", "src/server.js"]

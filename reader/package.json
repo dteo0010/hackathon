@@ -12,7 +12,8 @@
     "coverage": "tsx scripts/coverage.ts",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
-    "scans": "tsx scripts/scans.ts"
+    "scans": "tsx scripts/scans.ts",
+    "build": "tsc -p tsconfig.build.json"
   },
   "dependencies": {
     "@google/genai": "^2.23.0",

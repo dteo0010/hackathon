@@ -65,9 +65,9 @@ test('pdf keeps label / value columns, even after a long label', async () => {
     [170, 687, '77 ROBINSON ROAD'], [57, 660, 'Consignee (Non-Negotiable)'], [170, 660, 'BALL AND DOGGETT'], [170, 647, 'ENFIELD NSW']]);
   const r = await readDocument('x_BL.pdf', pdf);
   assert.equal(r.error, null);
-  assert.match(r.text, /^Shipper {3}APRIL FINE PAPER TRADING$/m);
-  assert.match(r.text, /^Consignee \(Non-Negotiable\) {3}BALL AND DOGGETT$/m);
-  assert.match(r.text, /^ {4}77 ROBINSON ROAD$/m);
+  assert.match(r.text, /^Shipper: APRIL FINE PAPER TRADING$/m);
+  assert.match(r.text, /^Consignee \(Non-Negotiable\): BALL AND DOGGETT$/m);
+  assert.match(r.text, /^77 ROBINSON ROAD$/m);
 });
 
 test('corrupt pdf is reported, not guessed', async () => {
