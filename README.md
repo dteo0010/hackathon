@@ -1,4 +1,4 @@
-# SI / BL document check
+# Shipify | SI / BL document check
 
 ## What this project does
 
