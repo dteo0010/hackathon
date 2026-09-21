@@ -56,7 +56,22 @@ Use the team's own classify/extract/compare instead of the baseline:
 
 ```powershell
 $env:PIPELINE_STAGES="src/stages.js#stagesFor"; npm start
+node --no-deprecation src/cli.js --data Bundle --stages src/stages.js#stagesFor
 ```
+
+`src/stages.js` runs the team's Python code (task A `Bundle/classifier.py`, task C
+`Bundle/sdoc_compare/`) through one long-lived Python process, `Bundle/bridge.py`.
+Reading files stays in `readers.js`; scanned PDFs keep the baseline's OCR-tolerant
+extract/compare. Needs Python 3.10+ on the PATH (`$env:PYTHON` to point elsewhere).
+
+| Env var | Effect |
+|---|---|
+| `SDOC_CLASSIFIER` | `baseline` (default) or `team` (A's classifier.py). Default stays `baseline` until A's rules cover SI-request emails. |
+| `SDOC_USE_LLM=0` | rules only, no API calls |
+| `GEMINI_API_KEY` / `ANTHROPIC_API_KEY` | turn on the LLM fallbacks in A and C |
+
+On the bundle, team C (with the baseline classifier) gives exactly the same submission
+as the baseline on all 520 emails; `test/stages.test.js` covers the bridge.
 
 ## Team notes (read this first)
 

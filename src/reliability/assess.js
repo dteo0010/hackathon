@@ -90,10 +90,14 @@ export function selectPair(documents) {
   return typeIssue ? { si: null, bl: null } : { si, bl };
 }
 
-/** null, empty, or a placeholder like "TBA" / "N/A". */
+/** Fill-in blanks: "____", "???", "____ MT", "??? KGS" (only symbols, maybe a unit). */
+const FILL_IN = /^[\s_?.\-]*(?:mts?|kgs?|tons?|containers?)?[\s.]*$/i;
+
+/** null, empty, or a placeholder like "TBA" / "N/A" / "____MT". */
 export function isBlank(value, cfg = DEFAULT_CONFIG) {
   if (value === null || value === undefined) return true;
-  return cfg.placeholderValues.has(String(value).replace(/\s+/g, ' ').trim().toLowerCase());
+  const v = String(value).replace(/\s+/g, ' ').trim().toLowerCase();
+  return cfg.placeholderValues.has(v) || FILL_IN.test(v);
 }
 
 // ---------------------------------------------------------------- attachments

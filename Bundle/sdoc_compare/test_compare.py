@@ -29,7 +29,7 @@ Shipper                        APRIL FAR EAST (M) SDN BHD
                                TOWER 2, AVENUE 5, LEVEL 6
 To the Order of                UAB NOVAKOPA
 Notify Party                   EAST BRIGHT FZ-LLC
-Load Port                      PORT KLANG (WESTPORT), MALAYSIA (SGSIN)
+Load Port                      PORT KLANG (WESTPORT), MALAYSIA (MYPKG)
 Port of Discharge              KARACHI, PAKISTAN
 
 CONTAINER NO.                  DESCRIPTION            GROSS WEIGHT (KG)
@@ -190,6 +190,38 @@ def test_unknown_label_goes_to_llm_only_when_label_missing(monkeypatch=None):
 
     finally:
         lf.llm_extract = orig
+
+
+def test_port_city_and_code_rule():
+    base = SI
+    # same city, one side without a code -> match
+    r = compare_text(base, base.replace(" (MYPKG)", ""), use_llm=False)
+    assert "port_of_loading" not in r.mismatched_fields
+    # same city, both coded, codes differ -> mismatch (team rule)
+    r = compare_text(base, base.replace("(MYPKG)", "(SGSIN)"), use_llm=False)
+    assert "port_of_loading" in r.mismatched_fields
+    # city changed, old code kept -> mismatch (never trust the code alone)
+    r = compare_text(base, base.replace("KARACHI, PAKISTAN (PKKHI)", "MUNDRA, INDIA (PKKHI)"), use_llm=False)
+    assert "port_of_discharge" in r.mismatched_fields
+
+
+def test_notify_same_as_consignee():
+    bl = SI.replace("Notify: EAST BRIGHT FZ-LLC", "Notify: SAME AS CONSIGNEE")
+    assert compare_text(SI, bl, use_llm=False).mismatched_fields == []
+    bl2 = bl.replace("Consignee (Non-Negotiable): EAST BRIGHT FZ-LLC", "Consignee (Non-Negotiable): OTHER CO")
+    r = compare_text(SI, bl2, use_llm=False)
+    assert "consignee" in r.mismatched_fields and "notify_party" in r.mismatched_fields
+
+
+def test_container_table_cells_joined_by_three_spaces():
+    # readers.js layout: cells joined with 3 spaces, positions do not line up with the header
+    bl = """BILL OF LADING
+CONTAINER NO.   DESCRIPTION   GROSS WEIGHT (KG)   PACKAGES
+GSLB0479748   40'HC UNCOATED WOODFREE PAPER IN REA   21,887   80
+ADNE4565060   40'HC UNCOATED WOODFREE PAPER IN REA   21,887   80
+"""
+    f = extract_fields(bl, use_llm=False).fields
+    assert f["gross_weight_kg"].value == 2 * 21887, f["gross_weight_kg"]
 
 
 if __name__ == "__main__":

@@ -20,8 +20,11 @@ from __future__ import annotations
 import json
 import os
 
-from google import genai
-from google.genai import types
+try:                                   # optional: without the SDK the pipeline stays rule-only
+    from google import genai
+    from google.genai import types
+except ImportError:                    # pragma: no cover
+    genai = types = None
 
 
 FIELD_HELP = {
@@ -54,6 +57,8 @@ SYSTEM = (
 
 def _client():
     key = os.environ.get("GEMINI_API_KEY")
+    if genai is None:
+        return None
 
     if not key:
         return None

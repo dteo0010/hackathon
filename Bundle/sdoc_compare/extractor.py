@@ -158,24 +158,39 @@ def _container_rows(lines: list[str]) -> list[tuple[str, float, str]]:
     The weight is the numeric token whose position is closest to the GROSS WEIGHT
     header column, so a trailing PACKAGES / CBM column is not mistaken for it.
     """
-    rows, gw_col = [], None
+    rows, gw_col, gw_idx, n_cols = [], None, None, None
     for ln in lines:
         low = ln.lower()
         m_h = _GW_HEADER.search(ln)
         if "container" in low and m_h and ("no" in low or "number" in low or "|" in ln):
             gw_col = m_h.start()
+            cells = _cells(ln)
+            n_cols = len(cells)
+            gw_idx = next((i for i, c in enumerate(cells) if _GW_HEADER.search(c)), None)
             continue
         if gw_col is None:
             continue
         m = _CONTAINER_ID.match(ln)
         if not m:
             continue
-        nums = [(abs(t.start() - gw_col), t) for t in _NUM_TOKEN.finditer(ln, m.end())]
-        if not nums:
-            continue
-        _, tok = min(nums, key=lambda x: x[0])
+        tok = None
+        cells = _cells(ln)
+        if gw_idx is not None and len(cells) == n_cols:
+            tok = _NUM_TOKEN.search(cells[gw_idx])
+        if tok is None:
+            nums = [(abs(t.start() - gw_col), t) for t in _NUM_TOKEN.finditer(ln, m.end())]
+            if not nums:
+                continue
+            _, tok = min(nums, key=lambda x: x[0])
         rows.append((m.group(1), float(tok.group(1).replace(",", "")), ln.strip()))
     return rows
+
+
+def _cells(line: str) -> list[str]:
+    s = line.strip()
+    if s.startswith("|"):
+        return [c.strip() for c in s.strip("|").split("|")]
+    return [c for c in re.split(r"\t|\s{2,}", s) if c]
 
 
 # doc type
