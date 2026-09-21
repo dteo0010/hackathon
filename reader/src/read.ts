@@ -90,11 +90,73 @@ export async function readAttachment(
 }
 
 async function readPdf(base: DocText, bytes: Uint8Array): Promise<DocText> {
-  const { extractText, getDocumentProxy } = await import('unpdf');
-  const doc = await getDocumentProxy(bytes);
-  const { text } = await extractText(doc, { mergePages: false });
-  const pages = (Array.isArray(text) ? text : [String(text)]).map(tidy);
+  const { getDocumentProxy } = await import('unpdf');
+  const doc = await getDocumentProxy(bytes, { verbosity: 0 });
+  const pages: string[] = [];
+  for (let n = 1; n <= doc.numPages; n++) {
+    const page = await doc.getPage(n);
+    const content = await page.getTextContent();
+    pages.push(tidy(layoutPdfLines(content.items as PdfItem[])));
+  }
   return { ...base, text: pages.join('\n\n'), pages, method: 'pdf-text' };
+}
+
+interface PdfItem {
+  str?: string;
+  transform?: number[];
+  width?: number;
+  height?: number;
+}
+
+/**
+ * Rebuild table columns from text positions. A plain text dump of these PDFs
+ * reads "Shipper APRIL FINE PAPER TRADING" — the label/value boundary is gone.
+ * But the label and the value are separate text runs with a wide gap between
+ * them, so: group runs into lines by their baseline, then treat a wide gap as
+ * a cell boundary. A two-cell line becomes "label: value", like every other
+ * format this reader produces.
+ */
+function layoutPdfLines(items: PdfItem[]): string {
+  const runs = items
+    .filter((i) => i.str && i.str.trim() && i.transform)
+    .map((i) => {
+      const [, , , d, x, y] = i.transform!;
+      return { str: i.str!, x, y, w: i.width ?? 0, h: Math.abs(d) || i.height || 10 };
+    })
+    .sort((a, b) => b.y - a.y || a.x - b.x); // PDF origin is bottom-left
+
+  const lines: (typeof runs)[] = [];
+  for (const run of runs) {
+    const line = lines.find((l) => Math.abs(l[0].y - run.y) <= Math.max(2, run.h * 0.4));
+    if (line) line.push(run);
+    else lines.push([run]);
+  }
+
+  return lines
+    .map((line) => {
+      line.sort((a, b) => a.x - b.x);
+      const cells: string[] = [];
+      let cell = line[0].str;
+      let end = line[0].x + line[0].w;
+      for (const run of line.slice(1)) {
+        const gap = run.x - end;
+        // A word space is ~0.25 of the font height; a column gap is several
+        // times that. Measured on this corpus: the tightest label/value gap is
+        // "Shipper (Principal or Seller)" at 1.0x the height (8pt at 8pt type).
+        if (gap > Math.max(3, run.h * 0.6)) {
+          cells.push(cell.trim());
+          cell = run.str;
+        } else {
+          const space = gap > 0.5 && !cell.endsWith(' ') && !run.str.startsWith(' ');
+          cell += (space ? ' ' : '') + run.str;
+        }
+        end = run.x + run.w;
+      }
+      cells.push(cell.trim());
+      const filled = cells.filter(Boolean);
+      return filled.length === 2 ? `${filled[0]}: ${filled[1]}` : filled.join('\t');
+    })
+    .join('\n');
 }
 
 async function readDocx(base: DocText, bytes: Uint8Array): Promise<DocText> {
@@ -123,23 +185,50 @@ async function readXlsx(base: DocText, bytes: Uint8Array): Promise<DocText> {
   return { ...base, text: sheets.join('\n\n'), pages: sheets, method: 'xlsx' };
 }
 
-/** <table> rows become "cell: cell" or tab-separated; paragraphs become lines. */
+/**
+ * Word HTML -> the same layout the .txt attachments use, so one extractor
+ * handles both:
+ *
+ *   <tr><td>Consignee (收货人)</td><td>AL GURG LLC<br>P.O. BOX 5069<br>DUBAI</td></tr>
+ *   ->  Consignee (收货人): AL GURG LLC
+ *         P.O. BOX 5069; DUBAI
+ *
+ * Rows are handled as rows. Line breaks inside a cell are resolved per cell,
+ * never before the cells are joined — otherwise a multi-line address tears
+ * the label away from its value.
+ */
 function flattenHtml(html: string): string {
-  const rows = html
-    .replace(/<\/(p|h[1-6]|li|div)>/gi, '\n')
+  const out: string[] = [];
+  for (const part of html.split(/(<table[^>]*>[\s\S]*?<\/table>)/i)) {
+    if (!/^<table/i.test(part)) {
+      out.push(...htmlLines(part));
+      continue;
+    }
+    for (const row of part.match(/<tr[^>]*>[\s\S]*?<\/tr>/gi) ?? []) {
+      const cells = (row.match(/<t[dh][^>]*>[\s\S]*?<\/t[dh]>/gi) ?? [])
+        .map(htmlLines)
+        .filter((c) => c.length > 0);
+      if (cells.length === 2) {
+        const [label, value] = cells;
+        out.push(`${label.join(' ')}: ${value[0]}`);
+        if (value.length > 1) out.push(`  ${value.slice(1).join('; ')}`);
+      } else if (cells.length) {
+        out.push(cells.map((c) => c.join('; ')).join('\t'));
+      }
+    }
+  }
+  return out.join('\n');
+}
+
+/** A fragment of HTML as its non-empty text lines. */
+function htmlLines(fragment: string): string[] {
+  return fragment
     .replace(/<br\s*\/?>/gi, '\n')
-    .replace(/<\/t[dh]>\s*/gi, '\t')
-    .replace(/<\/tr>/gi, '\n')
+    .replace(/<\/(p|h[1-6]|li|div)>/gi, '\n')
     .replace(/<[^>]+>/g, '')
-    .split('\n');
-  return rows
-    .map((line) => {
-      const cells = line.split('\t').map((c) => decodeEntities(c).trim()).filter(Boolean);
-      if (cells.length === 2) return `${cells[0]}: ${cells[1]}`;
-      return cells.join('\t');
-    })
-    .filter((l) => l.trim() !== '')
-    .join('\n');
+    .split('\n')
+    .map((l) => decodeEntities(l).replace(/\s+/g, ' ').trim())
+    .filter(Boolean);
 }
 
 function decodeEntities(s: string): string {

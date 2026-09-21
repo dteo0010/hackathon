@@ -28,6 +28,40 @@ describe('spreadsheets', () => {
   });
 });
 
+describe('word documents', () => {
+  it('keeps a table row together, bilingual label and all', async () => {
+    const doc = await read('email_055_BL.docx');
+    expect(doc.readable).toBe(true);
+    expect(doc.text).toContain('Shipper (Principal or Seller) (发货人): APRIL FINE PAPER TRADING');
+    expect(doc.text).toContain('PORT OF LOADING (装货港): SINGAPORE');
+  });
+
+  it('puts the rest of a multi-line cell on one indented continuation line', async () => {
+    const doc = await read('email_055_BL.docx');
+    expect(doc.text).toMatch(/Consignee \(收货人\): AL GURG STATIONERY LLC\n {2}P\.O\. BOX 5069; DUBAI/);
+  });
+});
+
+describe('pdf column layout', () => {
+  it('recovers the label/value boundary a plain text dump loses', async () => {
+    const doc = await read('email_059_SI.pdf');
+    expect(doc.method).toBe('pdf-text');
+    expect(doc.text).toContain('Shipper: APRIL FINE PAPER TRADING');
+    expect(doc.text).toContain('POL: BUATAN, INDONESIA');
+    expect(doc.text).toContain('Port of Discharge (POD): FREMANTLE, AUSTRALIA');
+  });
+
+  it('splits even when a long label nearly fills its column', async () => {
+    const doc = await read('email_160_BL.pdf');
+    expect(doc.text).toContain('Shipper (Principal or Seller): APRIL FINE PAPER TRADING');
+  });
+
+  it('keeps multi-column tables as tab-separated rows', async () => {
+    const doc = await read('email_059_SI.pdf');
+    expect(doc.text).toMatch(/CONTAINER NO\.\tDESCRIPTION\tGROSS WEIGHT \(KG\)/);
+  });
+});
+
 describe('unreadable documents', () => {
   it('reports a corrupt pdf rather than throwing', async () => {
     const doc = await read('email_511_BL.pdf');
