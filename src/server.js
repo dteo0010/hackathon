@@ -24,7 +24,7 @@ import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { BL_COMPARISON, CATEGORIES, FIELDS, OFFICIAL_REASONS } from './models.js';
 import { Inbox } from './inbox.js';
-import { REASON_LABELS, categoryOf, checkFormat, prettyField, reportRows, summary, toSubmission } from './reliability/report.js';
+import { REASON_LABELS, categoryOf, checkFormat, prettyField, reasonCounts, reportRows, summary, toSubmission } from './reliability/report.js';
 import { ROLES, STATUSES, ReviewError, applyCorrections, confirm, fieldRows, override, pickPair } from './reliability/review.js';
 import { Runner } from './reliability/runner.js';
 import { compareScores, confusionErrors, listScores, saveScore, summarize } from './reliability/scores.js';
@@ -155,7 +155,7 @@ export function createApp({ inbox, store, runner, dataSource, isDemo = false, se
 
   app.get('/api/report', wrap(async (req, res) => {
     const { warnings } = toSubmission(store, publicDemo ? null : await allIds(inbox));
-    res.json({ rows: reportRows(store), warnings });
+    res.json({ rows: reportRows(store), reasons: reasonCounts(store), warnings });
   }));
 
   app.get('/api/submission', wrap(async (req, res) => {

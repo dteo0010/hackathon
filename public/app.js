@@ -3,7 +3,7 @@
 
 const $ = (sel, el = document) => el.querySelector(sel);
 const main = $('#main');
-const state = { meta: null, summary: null, scope: 'attention', selected: null, roles: null, docTab: null, docsOnly: false, resultFilter: '', categoryFilter: '', search: '', queueIds: [] };
+const state = { meta: null, summary: null, scope: 'attention', selected: null, roles: null, docTab: null, docsOnly: false, resultFilter: '', categoryFilter: '', reasonFilter: '', search: '', queueIds: [] };
 
 // Everything from emails/documents is untrusted text: always escape.
 const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -201,6 +201,19 @@ function banner(d) {
   return `<div class="banner ${kind}">${esc(d.summary)}</div>`;
 }
 
+// How each value was obtained, shown under it: "AI, 94%, "Consignee: X"".
+const SOURCE_LABEL = { rule: 'Rule', derived: 'Derived', llm: 'AI', ocr: 'OCR', reviewer: 'Reviewer' };
+function provenance(meta) {
+  if (!meta || (!meta.source && !meta.evidence)) return '';
+  const parts = [];
+  if (meta.source) parts.push(SOURCE_LABEL[meta.source] || meta.source);
+  const low = typeof meta.confidence === 'number' && meta.confidence < 0.8 && meta.source !== 'reviewer';
+  if (typeof meta.confidence === 'number' && meta.source !== 'reviewer') parts.push(`${Math.round(meta.confidence * 100)}%`);
+  const ev = meta.evidence && meta.source !== 'reviewer' ? String(meta.evidence) : '';
+  const short = ev.length > 70 ? `${ev.slice(0, 69)}\u2026` : ev;
+  return `<div class="prov${low ? ' low' : ''}" title="${esc(ev)}">${esc(parts.join(', '))}${short ? `, <q>${esc(short)}</q>` : ''}</div>`;
+}
+
 function fieldsSection(d) {
   const roles = d.needsRoles ? `
     <p class="hint">Tell us which file is which. Pick Ignore for anything that isn't the SI or BL.</p>
@@ -212,8 +225,8 @@ function fieldsSection(d) {
     const cls = r.match === false ? 'mismatch' : '';
     const verdict = r.match === null ? '' : r.match ? 'Match' : 'Mismatch';
     return `<tr class="${cls}"><td>${esc(r.label)}</td>
-      <td><input data-side="si" data-field="${r.field}" value="${esc(r.si)}" aria-label="SI ${esc(r.label)}" class="${r.si ? '' : 'blank'}"></td>
-      <td><input data-side="bl" data-field="${r.field}" value="${esc(r.bl)}" aria-label="BL ${esc(r.label)}" class="${r.bl ? '' : 'blank'}"></td>
+      <td><input data-side="si" data-field="${r.field}" value="${esc(r.si)}" aria-label="SI ${esc(r.label)}" class="${r.si ? '' : 'blank'}">${provenance(r.siMeta)}</td>
+      <td><input data-side="bl" data-field="${r.field}" value="${esc(r.bl)}" aria-label="BL ${esc(r.label)}" class="${r.bl ? '' : 'blank'}">${provenance(r.blMeta)}</td>
       <td class="verdict">${verdict}</td></tr>`;
   }).join('');
   return `<h4>Shipment fields</h4>${roles}
@@ -234,6 +247,15 @@ function problemDocIndex(rec, docs) {
   return hit >= 0 ? hit : 0;
 }
 
+/** Image-only page read by a vision model (Task B): a draft for the reviewer, never trusted. */
+function transcriptionNote(doc) {
+  const t = doc.transcription;
+  if (!t) return '';
+  const spots = typeof t.illegible === 'number' && t.illegible > 0 ? ` ${t.illegible} spot${t.illegible === 1 ? '' : 's'} marked illegible.` : '';
+  return `<p class="banner review"><strong>AI transcription (draft).</strong> This page is an image; ${esc(t.model || 'a vision model')} transcribed it.${spots}
+    It is shown to help you check the values, and is not used in the automatic comparison.${doc.textWithheld ? '' : ' See "Extracted text" below.'}</p>`;
+}
+
 function documentsSection(docs, rec) {
   if (state.docTab === null) state.docTab = problemDocIndex(rec, docs);
   const i = Math.min(state.docTab, docs.length - 1);
@@ -248,6 +270,7 @@ function documentsSection(docs, rec) {
     const lines = (state.meta?.fields || []).map((f) => [f.label, doc.fields?.[f.id]?.evidence]).filter(([, e]) => e);
     pane = `<p class="meta">${esc(meta)}</p>
       ${doc.error ? `<p class="banner failed">Could not be read: ${esc(doc.error)}</p>` : ''}
+      ${transcriptionNote(doc)}
       <p class="banner info">Original source files are not included in the public demo. Below is the line each value was read from.</p>
       ${lines.length ? `<table class="evidence"><tbody>${lines.map(([l, e]) => `<tr><td>${esc(l)}</td><td><code>${esc(e)}</code></td></tr>`).join('')}</tbody></table>`
     : '<p class="meta">No field evidence was found in this document.</p>'}`;
@@ -262,6 +285,7 @@ function documentsSection(docs, rec) {
     const download = ext === 'txt' ? '' : `<a class="btn" href="${url}&download=1">Download original</a>`;
     pane = `<p class="meta">${esc(meta)}</p>
       ${doc.error ? `<p class="banner failed">Could not be read: ${esc(doc.error)}</p>` : ''}
+      ${transcriptionNote(doc)}
       ${original}${download}
       <details ${original ? '' : 'open'}><summary>Extracted text</summary><div class="body">
         <pre class="text">${esc(doc.text || '(no text extracted)')}</pre></div></details>`;
@@ -390,6 +414,7 @@ async function renderReport() {
   let rows = state.docsOnly ? all.filter((x) => x.category === 'BL_COMPARISON' || x.state === 'FAILED') : all;
   if (state.categoryFilter) rows = rows.filter((x) => x.category === state.categoryFilter);
   if (state.resultFilter) rows = rows.filter((x) => x.result === state.resultFilter);
+  if (state.reasonFilter) rows = rows.filter((x) => x.reason === state.reasonFilter);
   const q = state.search.trim().toLowerCase();
   if (q) rows = rows.filter((x) => `${x.emailId} ${x.subject || ''}`.toLowerCase().includes(q));
   const cats = [['', 'All categories'], ['BL_COMPARISON', 'BL comparison'], ['SI_REQUEST', 'SI request'],
@@ -401,6 +426,8 @@ async function renderReport() {
     <p class="processed"><b>${processed} / ${all.length}</b> emails processed
       <span class="meta">OK ${byResult('OK')}, mismatch ${byResult('MISMATCH')}, needs review ${byResult('NEEDS_REVIEW')},
       waiting for documents ${byResult('AWAITING_DOCS')}, failed ${byResult('FAILED')}</span></p>
+    ${(r.reasons || []).length ? `<p class="reasons"><span class="meta">Needs review by reason:</span>
+      ${r.reasons.map((x) => `<button class="chip${state.reasonFilter === x.reason ? ' on' : ''}" data-reason="${esc(x.reason)}" ${x.count ? '' : 'disabled'}>${esc(x.label)} <b>${x.count}</b></button>`).join(' ')}</p>` : ''}
     <div class="row" style="margin:.5rem 0 1rem">
       <input id="search" type="search" placeholder="Search email ID or subject" value="${esc(state.search)}" style="width:auto;min-width:220px">
       <label class="row">Category
@@ -426,6 +453,10 @@ async function renderReport() {
   $('#docsOnly').addEventListener('change', (e) => { state.docsOnly = e.target.checked; renderReport(); });
   $('#resultFilter').addEventListener('change', (e) => { state.resultFilter = e.target.value; renderReport(); });
   $('#categoryFilter').addEventListener('change', (e) => { state.categoryFilter = e.target.value; renderReport(); });
+  document.querySelectorAll('.reasons .chip').forEach((b) => b.addEventListener('click', () => {
+    state.reasonFilter = state.reasonFilter === b.dataset.reason ? '' : b.dataset.reason;
+    renderReport();
+  }));
   let searchTimer;
   $('#search').addEventListener('input', (e) => {
     clearTimeout(searchTimer);

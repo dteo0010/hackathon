@@ -32,6 +32,19 @@ export function mismatches(rec) {
   }));
 }
 
+/**
+ * How many emails currently need review, by reason, from the stored results (so a
+ * reviewer's decision moves the numbers). Every known reason is listed, zeros included.
+ */
+export function reasonCounts(store) {
+  const counts = Object.fromEntries(Object.keys(REASON_LABELS).map((r) => [r, 0]));
+  for (const rec of store.list()) {
+    const r = rec.outcome?.status === 'NEEDS_REVIEW' ? rec.outcome.reviewReason || 'other' : null;
+    if (r) counts[r] = (counts[r] || 0) + 1;
+  }
+  return Object.entries(counts).map(([reason, count]) => ({ reason, label: REASON_LABELS[reason] || 'Other', count }));
+}
+
 export function summary(rec) {
   const o = rec.outcome;
   if (rec.state === FAILED) return `Processing failed at ${rec.errorStage}: ${rec.errorMessage}`;
@@ -56,6 +69,7 @@ export function reportRows(store) {
     subject: rec.subject,
     category: categoryOf(rec),
     result: rec.outcome.status || (rec.state === FAILED ? 'FAILED' : null),
+    reason: rec.outcome.status === 'NEEDS_REVIEW' ? rec.outcome.reviewReason || null : null,
     details: summary(rec),
     mismatches: rec.outcome.status === 'MISMATCH' ? mismatches(rec) : [],
     reviewed: rec.state === REVIEWED,

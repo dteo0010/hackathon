@@ -20,7 +20,7 @@
  *   compare(si, bl)            -> ComparisonResult                    // task C
  */
 import { BL_COMPARISON, CATEGORIES, makeDocument, makeEmailResult, mismatched } from '../models.js';
-import { assess, mentionsAttachments, selectPair } from './assess.js';
+import { PIPELINE_ASSESS_CONFIG, assess, mentionsAttachments, selectPair } from './assess.js';
 import { DONE, IN_REVIEW, REVIEWED, makeOutcome } from './store.js';
 
 /** Throw from any stage when retrying cannot help (bad input, unsupported format). */
@@ -54,7 +54,7 @@ export class Runner {
    * @param {object} [opts.assessConfig]
    * @param {Partial<typeof DEFAULT_RETRY>} [opts.retry]
    */
-  constructor({ inbox, stages, store, assessConfig = {}, retry = {} }) {
+  constructor({ inbox, stages, store, assessConfig = PIPELINE_ASSESS_CONFIG, retry = {} }) {
     for (const s of ['classify', 'extract', 'compare']) {
       if (typeof stages?.[s] !== 'function') throw new Error(`stages.${s} must be a function`);
     }

@@ -53,7 +53,10 @@ export const OFFICIAL_REASONS = Object.freeze([
 ]);
 
 /**
- * @typedef {{value: string|null, confidence?: number|null, evidence?: string|null, page?: number|null}} FieldValue
+ * @typedef {{value: string|null, confidence?: number|null, evidence?: string|null, page?: number|null,
+ *   source?: 'rule'|'derived'|'llm'|'ocr'|'reviewer'|null}} FieldValue
+ *   source = how the value was obtained (provenance). D uses it with `confidence`
+ *   to decide whether a mismatch can be trusted; the review screen shows it.
  *
  * @typedef {object} DocumentResult
  * @property {string} path            exactly as in email.attachments
@@ -64,7 +67,9 @@ export const OFFICIAL_REASONS = Object.freeze([
  * @property {string|null} method     "text" | "pdf" | "docx" | "xlsx" | "ocr" | "vision"
  * @property {number|null} ocrConfidence  0..1
  * @property {string|null} error
- *
+ * @property {{model: string|null, illegible: number|null}|null} [transcription]
+ *           set when a vision model transcribed an image-only page; `text` then holds
+ *           that draft transcription, which is shown to reviewers but never trusted
  * @typedef {{field: string, siValue: string|null, blValue: string|null, match: boolean}} FieldComparison
  * @typedef {{fields: FieldComparison[]}} ComparisonResult
  *
@@ -87,8 +92,9 @@ export function makeDocument(props) {
   const fields = {};
   for (const [k, v] of Object.entries(props.fields || {})) {
     fields[k] = typeof v === 'object' && v !== null
-      ? { value: v.value ?? null, confidence: v.confidence ?? null, evidence: v.evidence ?? null, page: v.page ?? null }
-      : { value: v ?? null, confidence: null, evidence: null, page: null };
+      ? { value: v.value ?? null, confidence: v.confidence ?? null, evidence: v.evidence ?? null, page: v.page ?? null,
+        source: v.source ?? null }
+      : { value: v ?? null, confidence: null, evidence: null, page: null, source: null };
   }
   return {
     path: props.path,
@@ -99,6 +105,9 @@ export function makeDocument(props) {
     method: props.method ?? null,
     ocrConfidence: props.ocrConfidence ?? null,
     error: props.error ?? null,
+    transcription: props.transcription
+      ? { model: props.transcription.model ?? null, illegible: props.transcription.illegible ?? null }
+      : null,
   };
 }
 

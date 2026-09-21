@@ -22,19 +22,30 @@ const oneLine = (s) => {
 
 const db = JSON.parse(readFileSync(src, 'utf8'));
 let docs = 0;
-for (const rec of Object.values(db.emails)) {
-  rec.errorTrace = null;
-  for (const d of rec.result?.documents || []) {
+/** Keep values, provenance (source), confidence and a one-line evidence; drop the document text
+ *  (for a scan this is also where the vision model's draft transcription lives). */
+function sanitizeDocs(result) {
+  for (const d of result?.documents || []) {
     d.text = null;
     d.textWithheld = true;
+    delete d.pages;
+    if (d.transcription) d.transcription = { model: d.transcription.model ?? null, illegible: d.transcription.illegible ?? null };
     for (const f of Object.values(d.fields || {})) if (f) f.evidence = oneLine(f.evidence);
     docs += 1;
   }
+}
+for (const rec of Object.values(db.emails)) {
+  rec.errorTrace = null;
+  sanitizeDocs(rec.result);
   for (const i of rec.assessment?.issues || []) {
     for (const e of i.evidence || []) e.snippet = oneLine(e.snippet);
   }
 }
-for (const r of db.reviews || []) if (r && typeof r === 'object' && 'text' in r) r.text = null;
+for (const r of db.reviews || []) {
+  if (!r || typeof r !== 'object') continue;
+  if ('text' in r) r.text = null;
+  sanitizeDocs(r.result);            // a correction stores the whole result it was made on
+}
 
 writeFileSync(out, JSON.stringify(db));
 const size = Buffer.byteLength(JSON.stringify(db));

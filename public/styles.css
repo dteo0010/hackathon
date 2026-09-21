@@ -143,3 +143,14 @@ table.evidence { border-collapse: collapse; width: 100%; margin-top: .5rem; }
 table.evidence td { border-top: 1px solid var(--line); padding: .35rem .5rem; vertical-align: top; }
 table.evidence td:first-child { color: var(--ink-soft); white-space: nowrap; width: 1%; }
 table.evidence code { white-space: pre-wrap; word-break: break-word; }
+
+/* Provenance under each SI/BL value: source, confidence, the line it was read from */
+.prov { font-size: .78rem; color: var(--ink-soft); margin-top: .2rem; line-height: 1.3; overflow-wrap: anywhere; }
+.prov q { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: .75rem; }
+.prov.low { color: var(--amber); font-weight: 600; }
+
+/* Report: needs-review breakdown by reason (click to filter) */
+.reasons { display: flex; flex-wrap: wrap; gap: .35rem; align-items: center; margin: .25rem 0 .5rem; }
+.chip { border: 1px solid var(--line); background: var(--panel); border-radius: 999px; padding: .15rem .6rem; font: inherit; font-size: .85rem; cursor: pointer; color: var(--ink); }
+.chip.on { background: var(--amber-bg); border-color: var(--amber); }
+.chip:disabled { opacity: .5; cursor: default; }

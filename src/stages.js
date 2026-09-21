@@ -115,7 +115,10 @@ export function stagesFor(_source, { bridge = new PythonBridge(), classifier = p
     async extract(filePath, content) {
       const r = await readDocument(filePath, content);
       if (r.error) {
-        return makeDocument({ path: filePath, text: r.text, method: r.method, error: r.error, ocrConfidence: r.ocrConfidence });
+        // Unreadable. For an image-only page, r.text may hold a vision model's draft
+        // transcription (Task B, trustVision=false): kept for the reviewer, never compared.
+        return makeDocument({ path: filePath, text: r.text, method: r.method, error: r.error, ocrConfidence: r.ocrConfidence,
+          transcription: r.transcription && r.transcription.text ? r.transcription : null });
       }
       if (r.method === 'ocr') {               // reuse the OCR text, don't OCR twice
         return makeDocument({
@@ -129,7 +132,9 @@ export function stagesFor(_source, { bridge = new PythonBridge(), classifier = p
         // a blank ("TBA", "____MT") keeps its raw text so the reviewer sees what was written;
         // assess.isBlank() turns it into missing_value before compare runs
         const value = v.value ?? (v.reason === 'blank' ? v.raw ?? null : null);
-        return [f, { value, confidence: v.confidence ?? null, evidence: v.evidence ?? null }];
+        // provenance from C: "rule" | "derived" | "llm" (null when nothing was found)
+        return [f, { value, confidence: v.confidence ?? null, evidence: v.evidence ?? null,
+          source: value === null ? null : v.decided_by ?? null }];
       }));
       return makeDocument({
         path: filePath, docType: docTypeOf(x.doc_type), text: r.text, fields,

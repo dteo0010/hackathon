@@ -52,7 +52,10 @@ export function pickPair(result, roles = null) {
   return { si, bl };
 }
 
-/** One row per compared field: SI value, BL value, whether they match. */
+/**
+ * One row per compared field: SI value, BL value, whether they match, and for each
+ * side how the value was obtained (source, confidence, the line it came from).
+ */
 export function fieldRows(result, roles = null) {
   const { si, bl } = pickPair(result, roles);
   const comp = Object.fromEntries((result?.comparison?.fields || []).map((f) => [f.field, f]));
@@ -61,7 +64,15 @@ export function fieldRows(result, roles = null) {
     si: valueOf(si, field),
     bl: valueOf(bl, field),
     match: comp[field] ? comp[field].match : null,
+    siMeta: metaOf(si, field),
+    blMeta: metaOf(bl, field),
   }));
+}
+
+function metaOf(doc, field) {
+  const fv = doc?.fields?.[field];
+  if (!fv) return null;
+  return { source: fv.source ?? null, confidence: fv.confidence ?? null, evidence: fv.evidence ?? null };
 }
 
 function valueOf(doc, field) {
@@ -119,7 +130,7 @@ export async function applyCorrections(store, rec, { compare, siValues = {}, blV
       const next = typeof raw === 'string' ? raw.trim() || null : raw ?? null;
       const prev = valueOf(doc, field);
       if ((next || null) !== (prev || null)) {
-        doc.fields[field] = { value: next, confidence: 1, evidence: REVIEWER_EVIDENCE, page: null };
+        doc.fields[field] = { value: next, confidence: 1, evidence: REVIEWER_EVIDENCE, page: null, source: 'reviewer' };
         (corrections[doc.path] ??= {})[field] = { from: prev, to: next };
       }
     }

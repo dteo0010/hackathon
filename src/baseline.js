@@ -82,17 +82,17 @@ export function extractFields(text) {
     if (!value) continue;
     const isTotal = /^total\b/i.test(p.label.trim());
     if (!fields[field] || (isTotal && !fields[field].total)) {
-      fields[field] = { value, confidence: 0.9, evidence: `${p.label}: ${value}`, total: isTotal };
+      fields[field] = { value, confidence: 0.9, evidence: `${p.label}: ${value}`, total: isTotal, source: 'rule' };
     }
   }
   // PDF container tables: count container rows / sum their weights if no labelled total
   const rows = String(text || '').split('\n').filter((l) => /^\s*[A-Z]{4}\d{7}\b/.test(l));
   if (rows.length && !fields.container_count) {
-    fields.container_count = { value: String(rows.length), confidence: 0.7, evidence: `${rows.length} container rows` };
+    fields.container_count = { value: String(rows.length), confidence: 0.7, evidence: `${rows.length} container rows`, source: 'derived' };
   }
   if (rows.length && !fields.gross_weight_kg) {
     const sum = rows.reduce((s, l) => s + (toNumber(l.trim().split(/\s{3,}/).pop()) || 0), 0);
-    if (sum) fields.gross_weight_kg = { value: String(sum), confidence: 0.7, evidence: 'sum of container rows' };
+    if (sum) fields.gross_weight_kg = { value: String(sum), confidence: 0.7, evidence: 'sum of container rows', source: 'derived' };
   }
   for (const f of FIELDS) {
     if (fields[f]) delete fields[f].total;
@@ -141,7 +141,7 @@ export function extractFieldsFuzzy(text, confidence = null) {
         if (hit && !fields[field]) { found = { field, value: tokens.slice(k).join(' ').replace(/^[:.;,]\s*/, '') }; break; }
       }
     }
-    if (found?.value) fields[found.field] = { value: found.value, confidence, evidence: raw.trim() };
+    if (found?.value) fields[found.field] = { value: found.value, confidence, evidence: raw.trim(), source: 'ocr' };
   }
   for (const f of FIELDS) fields[f] ??= { value: null, confidence: null, evidence: null };
   return fields;
@@ -157,7 +157,10 @@ export function detectType(text) {
 
 export async function extract(path, content) {
   const r = await readDocument(path, content);
-  if (r.error) return makeDocument({ path, text: r.text, method: r.method, error: r.error, ocrConfidence: r.ocrConfidence });
+  if (r.error) {
+    return makeDocument({ path, text: r.text, method: r.method, error: r.error, ocrConfidence: r.ocrConfidence,
+      transcription: r.transcription && r.transcription.text ? r.transcription : null });
+  }
   const fields = r.method === 'ocr' ? extractFieldsFuzzy(r.text, r.ocrConfidence) : extractFields(r.text);
   return makeDocument({ path, docType: detectType(r.text), text: r.text, fields, method: r.method, ocrConfidence: r.ocrConfidence });
 }

@@ -7,7 +7,12 @@
  *   2. unreadable           a present attachment can't be read reliably
  *   3. wrong_doc_type       we don't have exactly one SI and one BL
  *   4. missing_value        a required field is absent in the SI or BL
- *   5. low_confidence       (internal, OFF by default) - see DEFAULT_CONFIG
+ *   5. low_confidence       any compared field whose SI or BL value is an uncertain read
+ *                           (confidence below minFieldConfidence, not typed in by a reviewer),
+ *                           whether that field matched or not: an uncertain value can hide a
+ *                           discrepancy as easily as create one. Off in the bare assess()
+ *                           default; the pipeline turns it on with PIPELINE_ASSESS_CONFIG (0.80).
+ *                           Confident reads are never escalated, whatever produced them (rule or AI).
  *
  * Each check needs the previous one to pass to be meaningful: you can't judge
  * doc type on an unreadable file, or say a value is missing from the wrong doc.
@@ -18,7 +23,7 @@
  * its own is NEVER a reason to escalate - that's C's job to report.
  */
 import {
-  BL_COMPARISON, DocType, FIELDS, Reason, issue, makeDocument, mismatched, needsReview, passed,
+  BL_COMPARISON, DocType, FIELDS, Reason, issue, makeDocument, needsReview, passed,
 } from '../models.js';
 
 const SNIPPET_LEN = 300;
@@ -34,10 +39,27 @@ export const DEFAULT_CONFIG = Object.freeze({
     '', '-', '--', 'n/a', 'na', 'nil', 'none', 'null', 'tba', 'tbc', 'tbd',
     'to be advised', 'to be confirmed', '?', 'xxx', 'unknown',
   ]),
-  // Off by default. If set, a field whose extraction confidence is below this
-  // AND which compare() reports as mismatched gets an internal low_confidence issue.
+  // Off by default. If set, any compared field whose SI or BL extraction confidence is
+  // below this (and not reviewer-entered) gets an internal low_confidence issue.
   minFieldConfidence: null,
 });
+
+/**
+ * What the pipeline (runner, CLI, server) uses. 0.80 sits below every confidence a
+ * deterministic read gets (rule 1.0, derived from a container table 0.9) and above a
+ * weak read: an AI answer the model itself rates below 80%, or OCR text. So a result that
+ * rests on a doubtful value (matched or not) goes to a person; a confident AI read is
+ * trusted like any other, and a disagreement between confident reads stays a MISMATCH. Override with SDOC_MIN_FIELD_CONFIDENCE
+ * (a number, or "off").
+ */
+export const PIPELINE_ASSESS_CONFIG = Object.freeze({ minFieldConfidence: pipelineThreshold() });
+
+function pipelineThreshold() {
+  const v = (typeof process !== 'undefined' && process.env?.SDOC_MIN_FIELD_CONFIDENCE) || '';
+  if (v.trim().toLowerCase() === 'off') return null;
+  const n = Number(v);
+  return v.trim() && Number.isFinite(n) ? n : 0.80;
+}
 
 /**
  * @param {import('../models.js').EmailResult} result
@@ -225,12 +247,16 @@ function missingValueIssues(si, bl, cfg) {
 function lowConfidenceIssues(result, si, bl, cfg) {
   if (cfg.minFieldConfidence === null || cfg.minFieldConfidence === undefined || !result.comparison) return [];
   const out = [];
-  for (const name of mismatched(result.comparison)) {
+  // every field that took part in the comparison, matched or not
+  for (const { field: name, match } of result.comparison.fields || []) {
     for (const [doc, label] of [[si, 'SI'], [bl, 'BL']]) {
       const fv = doc.fields[name];
-      if (fv && fv.confidence !== null && fv.confidence !== undefined && fv.confidence < cfg.minFieldConfidence) {
+      if (fv && fv.source !== 'reviewer' && fv.confidence !== null && fv.confidence !== undefined
+          && fv.confidence < cfg.minFieldConfidence) {
+        const how = SOURCE_WORDS[fv.source] ? ` ${SOURCE_WORDS[fv.source]}` : '';
         out.push(issue(Reason.LOW_CONFIDENCE,
-          `${pretty(name)} mismatch relies on a low-confidence ${label} read (${pct(fv.confidence)}): "${fv.value}".`,
+          `${pretty(name)} ${match ? 'match' : 'mismatch'} relies on a low-confidence${how} ${label} read (${pct(fv.confidence)}): "${fv.value}". `
+          + 'Please confirm the value against the document.',
           [{ doc: doc.path, field: name, snippet: fv.evidence, page: fv.page }]));
       }
     }
@@ -239,6 +265,8 @@ function lowConfidenceIssues(result, si, bl, cfg) {
 }
 
 // ------------------------------------------------------------------- helpers
+const SOURCE_WORDS = { llm: 'AI', ocr: 'OCR', derived: 'derived', rule: 'rule-based' };
+
 function snippet(text) {
   if (!text) return null;
   const t = text.trim();
