@@ -3,13 +3,16 @@
 
 const $ = (sel, el = document) => el.querySelector(sel);
 const main = $('#main');
-const state = { meta: null, summary: null, scope: 'attention', selected: null, roles: null, docTab: null, docsOnly: true, resultFilter: '', queueIds: [] };
+const state = { meta: null, summary: null, scope: 'attention', selected: null, roles: null, docTab: null, docsOnly: false, resultFilter: '', categoryFilter: '', search: '', queueIds: [] };
 
 // Everything from emails/documents is untrusted text: always escape.
 const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
+// API_BASE comes from config.js: '' when Express serves this page, the Render URL on Vercel.
+const API = window.API_BASE || '';
+
 async function api(method, url, body) {
-  const res = await fetch(url, {
+  const res = await fetch(API + url, {
     method, headers: body ? { 'Content-Type': 'application/json' } : {}, body: body ? JSON.stringify(body) : undefined,
   });
   const data = await res.json().catch(() => ({}));
@@ -57,7 +60,11 @@ async function refreshSidebar() {
 
   const job = s.job;
   let html = '';
-  if (job.running) {
+  if (s.publicDemo) {
+    html = `<p class="hint"><b>Public demo.</b> All ${s.total} emails were processed ahead of time by the full pipeline.
+      Results, field values and evidence are shown; the organisers' source emails and documents are not published.
+      Review, correct and recompare all work.</p>`;
+  } else if (job.running) {
     html = `<p>Processing ${job.done} of ${job.total || '…'}</p><progress max="${job.total || 1}" value="${job.done}" style="width:100%"></progress>`;
   } else if (s.dataAvailable) {
     html = '<button class="btn block" id="process" title="Runs every email that isn\'t finished yet. Failed ones are tried again.">Process inbox</button>';
@@ -70,7 +77,7 @@ async function refreshSidebar() {
   $('#job').innerHTML = html;
   $('#process')?.addEventListener('click', (e) => act(e.target, () => startJob('/api/process')));
   $('#demo')?.addEventListener('click', (e) => act(e.target, () => startJob('/api/demo')));
-  $('#source').innerHTML = `Inbox: ${esc(s.dataSource)}${s.isDemo ? '<br>Using demo classify/extract/compare.' : ''}`;
+  $('#source').innerHTML = s.publicDemo ? '' : `Inbox: ${esc(s.dataSource)}${s.isDemo ? '<br>Using demo classify/extract/compare.' : ''}`;
 
   if (job.running && !pollTimer) {
     pollTimer = setInterval(async () => {
@@ -159,11 +166,13 @@ async function renderDetail(id) {
 
   $('#detail').innerHTML = `
     <h3>${esc(rec.subject || rec.emailId)}</h3>
-    <p class="meta">${esc(rec.emailId)}, from ${esc(d.email?.from || 'unknown sender')}</p>
+    <p class="meta">${esc(rec.emailId)}${d.email?.from ? `, from ${esc(d.email.from)}` : ''}</p>
     ${banner(d)}
-    <details><summary>Email</summary><div class="body">
+    ${state.summary?.publicDemo
+    ? `<p class="meta">Attachments: ${esc((rec.result?.attachments || []).map((a) => a.split('/').pop()).join(', ') || 'none')}. The email text is not published in the public demo.</p>`
+    : `<details><summary>Email</summary><div class="body">
       <pre class="text">${esc(d.email?.body || '(no body)')}</pre>
-      <p class="meta">Attachments: ${esc((d.email?.attachments || []).join(', ') || 'none')}</p></div></details>
+      <p class="meta">Attachments: ${esc((d.email?.attachments || []).join(', ') || 'none')}</p></div></details>`}
     ${showFields ? fieldsSection(d) + documentsSection(docs, rec) : ''}
     ${decisionSection(d)}
     ${historySection(d)}`;
@@ -175,8 +184,8 @@ function banner(d) {
   if (rec.state === 'FAILED') {
     return `<div class="banner failed"><strong>Processing failed at ${esc(rec.errorStage)}</strong>
       after ${rec.attempts} attempt${rec.attempts === 1 ? '' : 's'}.<p>${esc(rec.errorMessage)}</p></div>
-      <div class="row"><button class="btn primary" id="retry">Retry processing</button>
-      <span class="hint">Runs the whole email again. Check the error first if it keeps failing.</span></div>
+      ${state.summary?.publicDemo ? '' : `<div class="row"><button class="btn primary" id="retry">Retry processing</button>
+      <span class="hint">Runs the whole email again. Check the error first if it keeps failing.</span></div>`}
       <details><summary>Technical details</summary><div class="body"><pre class="text">${esc(rec.errorTrace)}</pre></div></details>`;
   }
   if (rec.state === 'IN_REVIEW' && rec.assessment) {
@@ -233,10 +242,19 @@ function documentsSection(docs, rec) {
   let pane;
   if (!doc.found) {
     pane = '<p class="banner review">This file is listed in the email but isn\'t there.</p>';
+  } else if (doc.textWithheld) {
+    const meta = [`Detected as ${doc.docType}`, doc.method && `read with ${doc.method}`,
+      doc.ocrConfidence !== null && `OCR confidence ${Math.round(doc.ocrConfidence * 100)}%`].filter(Boolean).join(', ');
+    const lines = (state.meta?.fields || []).map((f) => [f.label, doc.fields?.[f.id]?.evidence]).filter(([, e]) => e);
+    pane = `<p class="meta">${esc(meta)}</p>
+      ${doc.error ? `<p class="banner failed">Could not be read: ${esc(doc.error)}</p>` : ''}
+      <p class="banner info">Original source files are not included in the public demo. Below is the line each value was read from.</p>
+      ${lines.length ? `<table class="evidence"><tbody>${lines.map(([l, e]) => `<tr><td>${esc(l)}</td><td><code>${esc(e)}</code></td></tr>`).join('')}</tbody></table>`
+    : '<p class="meta">No field evidence was found in this document.</p>'}`;
   } else {
     const meta = [`Detected as ${doc.docType}`, doc.method && `read with ${doc.method}`,
       doc.ocrConfidence !== null && `OCR confidence ${Math.round(doc.ocrConfidence * 100)}%`].filter(Boolean).join(', ');
-    const url = `/api/attachment?path=${encodeURIComponent(doc.path)}`;
+    const url = `${API}/api/attachment?path=${encodeURIComponent(doc.path)}`;
     const ext = doc.path.toLowerCase().split('.').pop();
     let original = '';
     if (ext === 'pdf') original = `<iframe class="original" src="${url}" title="Original PDF"></iframe>`;
@@ -366,19 +384,34 @@ async function renderReport() {
     main.innerHTML = '<h2>Report</h2><p class="banner info">No emails processed yet. Use Process inbox in the sidebar.</p>';
     return;
   }
-  let rows = state.docsOnly ? r.rows.filter((x) => x.category === 'BL_COMPARISON' || x.state === 'FAILED') : r.rows;
+  const all = r.rows;
+  const processed = all.filter((x) => x.state !== 'PENDING').length;
+  const byResult = (k) => all.filter((x) => x.result === k).length;
+  let rows = state.docsOnly ? all.filter((x) => x.category === 'BL_COMPARISON' || x.state === 'FAILED') : all;
+  if (state.categoryFilter) rows = rows.filter((x) => x.category === state.categoryFilter);
   if (state.resultFilter) rows = rows.filter((x) => x.result === state.resultFilter);
+  const q = state.search.trim().toLowerCase();
+  if (q) rows = rows.filter((x) => `${x.emailId} ${x.subject || ''}`.toLowerCase().includes(q));
+  const cats = [['', 'All categories'], ['BL_COMPARISON', 'BL comparison'], ['SI_REQUEST', 'SI request'],
+    ['INVOICE_QUERY', 'Invoice query'], ['GENERAL', 'General'], ['SPAM', 'Spam']];
   const details = (x) => x.mismatches.length
     ? `<ul class="mm">${x.mismatches.map((m) => `<li>${esc(label(m.field))}: SI <b>${esc(m.si ?? '?')}</b> / BL <b>${esc(m.bl ?? '?')}</b></li>`).join('')}</ul>`
     : esc(x.details);
   main.innerHTML = `<h2>Report</h2>
+    <p class="processed"><b>${processed} / ${all.length}</b> emails processed
+      <span class="meta">OK ${byResult('OK')}, mismatch ${byResult('MISMATCH')}, needs review ${byResult('NEEDS_REVIEW')},
+      waiting for documents ${byResult('AWAITING_DOCS')}, failed ${byResult('FAILED')}</span></p>
     <div class="row" style="margin:.5rem 0 1rem">
-      <label class="row"><input type="checkbox" id="docsOnly" style="width:auto" ${state.docsOnly ? 'checked' : ''}> Document checks only</label>
+      <input id="search" type="search" placeholder="Search email ID or subject" value="${esc(state.search)}" style="width:auto;min-width:220px">
+      <label class="row">Category
+        <select id="categoryFilter" style="width:auto">${cats
+          .map(([v, l]) => `<option value="${v}" ${state.categoryFilter === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
       <label class="row">Result
         <select id="resultFilter" style="width:auto">${[['', 'All'], ['OK', 'OK'], ['MISMATCH', 'Mismatch'], ['NEEDS_REVIEW', 'Needs review'], ['AWAITING_DOCS', 'Waiting for documents'], ['FAILED', 'Failed']]
           .map(([v, l]) => `<option value="${v}" ${state.resultFilter === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
+      <label class="row"><input type="checkbox" id="docsOnly" style="width:auto" ${state.docsOnly ? 'checked' : ''}> Document checks only</label>
       <span class="meta">${rows.length} shown</span>
-      <a class="btn" href="/api/submission">Download submission.json</a>
+      <a class="btn" href="${API}/api/submission">Download submission.json</a>
       ${state.summary.canScore ? '<button class="btn primary" id="score">Score with organisers\' server</button>' : ''}
     </div>
     ${r.warnings.map((w) => `<p class="banner review">${esc(w)}</p>`).join('')}
@@ -392,6 +425,15 @@ async function renderReport() {
     <div id="scoreOut"></div>`;
   $('#docsOnly').addEventListener('change', (e) => { state.docsOnly = e.target.checked; renderReport(); });
   $('#resultFilter').addEventListener('change', (e) => { state.resultFilter = e.target.value; renderReport(); });
+  $('#categoryFilter').addEventListener('change', (e) => { state.categoryFilter = e.target.value; renderReport(); });
+  let searchTimer;
+  $('#search').addEventListener('input', (e) => {
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(() => {
+      state.search = e.target.value;
+      renderReport().then(() => { const s = $('#search'); s.focus(); s.setSelectionRange(s.value.length, s.value.length); });
+    }, 200);
+  });
   $('#score')?.addEventListener('click', (e) => act(e.target, async () => {
     const res = await api('POST', '/api/score', { note: prompt('Note for this score (what changed?)') || null });
     toast(`Scored: ${res.summary.final.toFixed(3)}`);

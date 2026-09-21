@@ -133,3 +133,13 @@ pre.score { background: #fff; border: 1px solid var(--line); padding: .8rem; ove
   main { padding: 1.25rem; }
 }
 @media (prefers-reduced-motion: reduce) { #toast { transition: none; } }
+
+/* Report: coverage line */
+.processed { font-size: 1.05rem; margin: .25rem 0 .5rem; }
+.processed .meta { display: block; margin-top: .15rem; }
+
+/* Public demo: evidence lines instead of the source file */
+table.evidence { border-collapse: collapse; width: 100%; margin-top: .5rem; }
+table.evidence td { border-top: 1px solid var(--line); padding: .35rem .5rem; vertical-align: top; }
+table.evidence td:first-child { color: var(--ink-soft); white-space: nowrap; width: 1%; }
+table.evidence code { white-space: pre-wrap; word-break: break-word; }

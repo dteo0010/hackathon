@@ -69,6 +69,14 @@ test('blank SI value keeps its text and D escalates missing_value instead of rep
   assert.equal(a.reason, 'missing_value');
 });
 
+test('compare uses the held values, so a reviewer correction is respected', opts, async () => {
+  const si = await team.extract('attachments/email_005_SI.txt', buf(SI));
+  const bl = await team.extract('attachments/email_005_BL.txt', buf(BL));
+  assert.deepEqual((await team.compare(si, bl)).fields.filter((f) => !f.match).map((f) => f.field), ['container_count']);
+  bl.fields.container_count = { value: '6', confidence: 1, evidence: 'Entered by reviewer', page: null };
+  assert.deepEqual((await team.compare(si, bl)).fields.filter((f) => !f.match).map((f) => f.field), []);
+});
+
 test('fill-in blanks count as missing values in D', () => {
   for (const v of ['____MT', '_______', '???', '??? MTS', 'TBA', 'N/A', '']) assert.equal(isBlank(v), true, v);
   for (const v of ['SINGAPORE', '6 x 40HC', '0']) assert.equal(isBlank(v), false, v);
@@ -88,7 +96,7 @@ test('classify: A\'s classifier through the bridge, attachments beat the subject
 });
 
 test('python errors are reported, not swallowed', opts, async () => {
-  await assert.rejects(bridge.call('no_such_op'), /python no_such_op: KeyError/);
+  await assert.rejects(bridge.call('no_such_op'), /python no_such_op: .*no_such_op/);
   assert.equal(await bridge.call('ping'), 'pong'); // bridge still alive afterwards
 });
 

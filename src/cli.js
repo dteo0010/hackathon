@@ -17,6 +17,7 @@
  * Emails already finished (or reviewed by a person) are kept unless --fresh,
  * so human review decisions survive a re-run. Failed emails are retried.
  */
+import './env.js'; // .env -> process.env, before anything reads it
 import { rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';

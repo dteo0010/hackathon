@@ -1,6 +1,7 @@
 # Python virtual environment
 .venv/
 venv/
+*.patch
 
 # Python cache
 __pycache__/
@@ -26,6 +27,7 @@ __pycache__/
 # Environment variables / API keys
 .env
 .env.*
+!.env.example
 
 # Frontend / Node
 node_modules/

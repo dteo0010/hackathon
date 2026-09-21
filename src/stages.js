@@ -140,7 +140,10 @@ export function stagesFor(_source, { bridge = new PythonBridge(), classifier = p
     /** Task C */
     async compare(si, bl) {
       if (si.method === 'ocr' || bl.method === 'ocr') return baseline.compare(si, bl);
-      const res = await bridge.call('compare', { si_text: si.text || '', bl_text: bl.text || '' });
+      // Compare the field VALUES held for each document (what reviewers see and may correct),
+      // not a fresh read of the text - otherwise a reviewer's correction would be ignored.
+      const values = (d) => Object.fromEntries(FIELDS.map((f) => [f, d.fields?.[f]?.value ?? null]));
+      const res = await bridge.call('compare_values', { si: values(si), bl: values(bl) });
       return { fields: res.fields.map(({ field, siValue, blValue, match }) => ({ field, siValue, blValue, match })) };
     },
   };

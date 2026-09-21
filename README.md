@@ -73,6 +73,26 @@ extract/compare. Needs Python 3.10+ on the PATH (`$env:PYTHON` to point elsewher
 On the bundle, team C (with the baseline classifier) gives exactly the same submission
 as the baseline on all 520 emails; `test/stages.test.js` covers the bridge.
 
+## Public deployment (results only)
+
+The live demo shows the processed result of **all 520 emails** (category, status, the 7 SI/BL
+fields, mismatches, review reasons, one evidence line per field) and supports review, correct and
+recompare. It does **not** publish the organisers' emails or documents: `Bundle/inbox/` and
+`Bundle/attachments/` are ignored by both Git and Docker.
+
+1. Process the bundle locally and make the public results file:
+   ```
+   node --no-deprecation src/cli.js --data Bundle --stages src/stages.js#stagesFor --db full-db.json --fresh
+   node scripts/make-public-seed.mjs full-db.json deploy/results-seed.json
+   ```
+2. **Backend, Render**: New Web Service from this repo, runtime Docker (uses `Dockerfile`, `PUBLIC_DEMO=1`).
+   Environment: `GEMINI_API_KEY`, `CORS_ORIGINS=https://<your-app>.vercel.app`.
+3. **Frontend, Vercel**: import the repo (uses `vercel.json`, serves `public/`). Put the Render URL in
+   `public/config.js` (`BACKEND`).
+
+The Render URL also serves the full screen by itself. Free Render instances sleep when idle: open the
+site a minute before a demo. Reviews made on the public site reset when the instance restarts.
+
 ## Team notes (read this first)
 
 **Who built what.** Task D is complete: everything in `src/reliability/` and `public/`,

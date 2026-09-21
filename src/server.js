@@ -9,9 +9,17 @@
  *   PIPELINE_STAGES  "demo", "baseline" or "path/to/module.js#exportName"
  *                    default: demo for demo_data, otherwise baseline (see loadStages.js)
  *   PORT             default: 3000
+ *   CORS_ORIGINS     comma-separated origins allowed to call the API from another host,
+ *                    e.g. the Vercel frontend "https://blint.vercel.app" ("*" = any)
+ *   PIPELINE_SEED_DB results processed ahead of time; copied to PIPELINE_DB when that
+ *                    file doesn't exist yet, so a fresh deploy opens with all emails done
+ *   PUBLIC_DEMO=1    results-only public site: no inbox, no source files. Reading results,
+ *                    review, correct + recompare work; processing, retry and file
+ *                    downloads are switched off (see scripts/make-public-seed.mjs)
  */
+import './env.js'; // .env -> process.env, before anything reads it
 import express from 'express';
-import { existsSync } from 'node:fs';
+import { copyFileSync, existsSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { BL_COMPARISON, CATEGORIES, FIELDS, OFFICIAL_REASONS } from './models.js';
@@ -34,8 +42,12 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
  * @param {boolean} [deps.isDemo]
  * @param {Function} [deps.seedDemo]   () => void, writes the demo inbox (demo mode only)
  */
-export function createApp({ inbox, store, runner, dataSource, isDemo = false, seedDemo = null, scoresDir = 'scores', stagesName = null }) {
+export const PUBLIC_DEMO_MESSAGE = 'Not available in the public demo: the source emails and documents are not published. '
+  + 'All emails were processed ahead of time; the results, field values and evidence are shown here.';
+
+export function createApp({ inbox, store, runner, dataSource, isDemo = false, seedDemo = null, scoresDir = 'scores', stagesName = null, publicDemo = false }) {
   const app = express();
+  app.use(cors((process.env.CORS_ORIGINS || '').split(',').map((s) => s.trim()).filter(Boolean)));
   app.use(express.json({ limit: '2mb' }));
   app.use(express.static(path.join(HERE, '..', 'public')));
 
@@ -73,8 +85,9 @@ export function createApp({ inbox, store, runner, dataSource, isDemo = false, se
   // ------------------------------------------------------------------- reads
   app.get('/api/summary', (req, res) => {
     res.json({
-      counts: store.counts(), job, dataSource, isDemo, dataAvailable: dataAvailable(),
-      canScore: inbox.isRemote,
+      counts: store.counts(), job, dataSource: publicDemo ? null : dataSource, isDemo, publicDemo,
+      dataAvailable: !publicDemo && dataAvailable(), canScore: !publicDemo && inbox.isRemote,
+      total: store.list().length,
       meta: { fields: FIELDS.map((f) => ({ id: f, label: prettyField(f) })), categories: CATEGORIES,
         statuses: STATUSES, roles: ROLES,
         reasons: OFFICIAL_REASONS.map((r) => ({ id: r, label: REASON_LABELS[r] })) },
@@ -101,7 +114,9 @@ export function createApp({ inbox, store, runner, dataSource, isDemo = false, se
       try { roles = JSON.parse(req.query.roles); } catch { roles = null; }
     }
     let email = null;
-    try { email = await inbox.get(rec.emailId); } catch { email = null; }
+    if (!publicDemo) {
+      try { email = await inbox.get(rec.emailId); } catch { email = null; }
+    }
     const docs = rec.result?.documents || [];
     const { si, bl } = pickPair(rec.result, roles);
     res.json({
@@ -122,6 +137,7 @@ export function createApp({ inbox, store, runner, dataSource, isDemo = false, se
   const TYPES = { '.pdf': 'application/pdf', '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg',
     '.gif': 'image/gif', '.webp': 'image/webp', '.txt': 'text/plain; charset=utf-8' };
   app.get('/api/attachment', wrap(async (req, res) => {
+    if (publicDemo) return res.status(404).json({ error: PUBLIC_DEMO_MESSAGE });
     const p = String(req.query.path || '');
     const listed = store.list().some((r) => r.result?.attachments?.includes(p));
     if (!listed) return res.status(404).json({ error: 'Not an attachment of any processed email.' });
@@ -138,17 +154,18 @@ export function createApp({ inbox, store, runner, dataSource, isDemo = false, se
   }));
 
   app.get('/api/report', wrap(async (req, res) => {
-    const { warnings } = toSubmission(store, await allIds(inbox));
+    const { warnings } = toSubmission(store, publicDemo ? null : await allIds(inbox));
     res.json({ rows: reportRows(store), warnings });
   }));
 
   app.get('/api/submission', wrap(async (req, res) => {
-    const { submission } = toSubmission(store, await allIds(inbox));
+    const { submission } = toSubmission(store, publicDemo ? null : await allIds(inbox));
     res.attachment('submission.json').type('application/json').send(JSON.stringify(submission, null, 2));
   }));
 
   // ------------------------------------------------------------------ writes
   app.post('/api/process', (req, res) => {
+    if (publicDemo) return res.status(403).json({ error: PUBLIC_DEMO_MESSAGE });
     if (!dataAvailable()) return res.status(400).json({ error: `Inbox not found at ${dataSource}. Set PIPELINE_DATA.` });
     res.status(startJob() ? 202 : 409).json({ job });
   });
@@ -159,6 +176,7 @@ export function createApp({ inbox, store, runner, dataSource, isDemo = false, se
   });
 
   app.post('/api/emails/:id/retry', wrap(async (req, res) => {
+    if (publicDemo) return res.status(403).json({ error: PUBLIC_DEMO_MESSAGE });
     mustGet(req.params.id);
     const rec = await runner.retry(req.params.id);
     res.json({ record: rec, summary: summary(rec) });
@@ -188,6 +206,7 @@ export function createApp({ inbox, store, runner, dataSource, isDemo = false, se
   }));
 
   app.post('/api/score', wrap(async (req, res) => {
+    if (publicDemo) return res.status(403).json({ error: PUBLIC_DEMO_MESSAGE });
     const { submission } = toSubmission(store, await allIds(inbox));
     const scoreboard = await inbox.submit(submission);
     const previous = listScores(scoresDir)[0]?.scoreboard;
@@ -200,6 +219,7 @@ export function createApp({ inbox, store, runner, dataSource, isDemo = false, se
   });
 
   app.get('/api/format', wrap(async (req, res) => {
+    if (publicDemo) return res.json({ checked: false, problems: [] });
     let sample;
     try { sample = await inbox.sampleSubmission(); } catch { return res.json({ checked: false, problems: [] }); }
     const { submission } = toSubmission(store, await allIds(inbox));
@@ -234,6 +254,21 @@ async function allIds(inbox) {
   }
 }
 
+/** Let a frontend on another host (Vercel) call the API. Same-origin requests are unaffected. */
+export function cors(allowed) {
+  return (req, res, next) => {
+    const origin = req.headers.origin;
+    if (origin && (allowed.includes('*') || allowed.includes(origin))) {
+      res.set('Access-Control-Allow-Origin', origin);
+      res.set('Vary', 'Origin');
+      res.set('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
+      res.set('Access-Control-Allow-Headers', 'Content-Type');
+      if (req.method === 'OPTIONS') return res.sendStatus(204);
+    }
+    next();
+  };
+}
+
 // ---------------------------------------------------------------------- main
 async function main() {
   const dataSource = process.env.PIPELINE_DATA || 'demo_data';
@@ -242,12 +277,18 @@ async function main() {
   const isDemo = stagesSpec === 'demo';
   const port = Number(process.env.PORT || 3000);
 
+  const seed = process.env.PIPELINE_SEED_DB;
+  if (seed && existsSync(seed) && !existsSync(dbPath)) {
+    copyFileSync(seed, dbPath);
+    console.log(`Seeded ${dbPath} from ${seed}`);
+  }
   const inbox = new Inbox(dataSource);
   const store = new Store(dbPath);
   const runner = new Runner({ inbox, stages: await loadStages(stagesSpec, dataSource), store });
   const seedDemo = isDemo ? async () => (await import('./reliability/demo.js')).seed(dataSource) : null;
 
-  const app = createApp({ inbox, store, runner, dataSource, isDemo, seedDemo, stagesName: stagesSpec });
+  const publicDemo = process.env.PUBLIC_DEMO === '1';
+  const app = createApp({ inbox, store, runner, dataSource, isDemo, seedDemo, stagesName: stagesSpec, publicDemo });
   const server = app.listen(port, () => {
     console.log(`Review screen: http://localhost:${port}`);
     console.log(`Inbox: ${dataSource}   Store: ${dbPath}   Stages: ${stagesSpec}`);
