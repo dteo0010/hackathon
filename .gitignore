@@ -1,0 +1,48 @@
+# Node / reader
+node_modules/
+lib/
+dist/
+data/
+.DS_Store
+*.log
+
+# Python virtual environment
+.venv/
+venv/
+*.patch
+
+# Python cache
+__pycache__/
+*.py[cod]
+
+# Pytest
+.pytest_cache/
+
+# IDE
+.vscode/
+
+# Local participant dataset
+/Bundle/inbox/
+/Bundle/attachments/
+
+# Organizer-only Docker package
+/docker/
+
+# Generated evaluation outputs
+/Bundle/submission.json
+/Bundle/comparison_detail.json
+
+# Environment variables / API keys
+.env
+.env.*
+!.env.example
+
+# Local frontend / demo data
+demo_data/
+
+# Runtime / generated files
+*-db.json
+*-db.json.tmp
+.outage_calls
+submission.json
+calibration.csv

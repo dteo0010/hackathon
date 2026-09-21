@@ -1,0 +1,2 @@
+# Python side of the pipeline (Bundle/bridge.py). Everything else is standard library.
+google-genai
