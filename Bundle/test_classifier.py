@@ -1,9 +1,9 @@
-"""python -m pytest sdoc_compare/test_classifier.py -q   (or: python -m sdoc_compare.test_classifier)"""
+"""python -m pytest test_classifier.py -q   (or: python -m test_classifier)"""
 import json
 import tempfile
 from pathlib import Path
 
-from sdoc_compare.classifier import classify_email, role_from_name, role_from_text
+from classifier import classify_email, role_from_name, role_from_text
 from sdoc_compare.test_compare import BL_XLSX, SI
 
 
@@ -160,7 +160,7 @@ def _mk(data: Path, eid, subject, body, files: dict):
 
 
 def test_pipeline_end_to_end():
-    from sdoc_compare.pipeline import build_submission
+    from pipeline import build_submission
     with tempfile.TemporaryDirectory() as d:
         data = Path(d)
         ask = "Please check the draft BL against the SI."
@@ -208,7 +208,7 @@ def test_real_invoice_query_with_quoted_thread():
 
 
 def test_quoted_history_does_not_leak_into_classification():
-    from sdoc_compare.classifier import clean_body
+    from classifier import clean_body
     e = dict(REAL_002)
     e["body"] = ("Hi, can you confirm the payment status of invoice 7781?\n\nRegards,\nA\n\n"
                  "From: B <b@x.com>\nSent: Monday\nSubject: RE: docs\n\n"
@@ -219,7 +219,7 @@ def test_quoted_history_does_not_leak_into_classification():
 
 
 def test_bare_forward_keeps_its_content():
-    from sdoc_compare.classifier import clean_body
+    from classifier import clean_body
     body = "FYI\n\nFrom: A <a@x.com>\nSubject: Check BL vs SI\n\nPlease check the draft BL against the SI."
     assert "draft BL" in clean_body(body)          # cutting would leave 'FYI' only -> keep everything
 
@@ -246,7 +246,7 @@ def test_real_xlsx_layout_end_to_end():
     """Layout copied from email_005: title row, 'BL INSTRUCTION' row, 'label | NAME | ADDRESS' cells,
     numeric weight cell, differently worded labels on each side."""
     import openpyxl
-    from sdoc_compare.pipeline import build_submission
+    from pipeline import build_submission
     si_rows = [("ASIA PACIFIC PAPERBOARD TRADING PTE LTD", None), ("BL INSTRUCTION", "3154303911"),
                ("SHIPPER", "ASIA PACIFIC PAPERBOARD TRADING PTE LTD | 80 RAFFLES PLACE; SINGAPORE"),
                ("Consignee (Non-Negotiable)", "BALL & DOGGETT AUSTRALIA PTY LTD | 43-45 METROPOLITAN ROAD"),
@@ -277,7 +277,7 @@ def test_real_xlsx_layout_end_to_end():
 # ---------------------------------------------------------------- AI provider plumbing
 def test_provider_selection_and_json_parsing(monkeypatch=None):
     import os
-    import sdoc_compare.classifier as cl
+    import classifier as cl
     saved = {k: os.environ.pop(k, None) for k in ("GEMINI_API_KEY", "ANTHROPIC_API_KEY", "SDOC_LLM_PROVIDER")}
     try:
         assert cl._provider() is None
@@ -305,7 +305,7 @@ def test_llm_sees_cleaned_email_and_prompt_injection_is_ignored():
         seen["prompt"] = prompt
         return '{"category": "SPAM", "confidence": 0.9, "reason": "x"}'
 
-    import sdoc_compare.classifier as cl
+    import classifier as cl
     orig, cl._call_llm = cl._call_llm, fake_call
     try:
         e = E("Hello", "Can you look at this when you can?\n\nRegards,\nA\n\nFrom: B <b@x.com>\nold stuff about draft BL")

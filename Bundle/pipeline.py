@@ -1,9 +1,9 @@
 """
 End-to-end glue:  email record -> classify -> (BL_COMPARISON) read -> extract -> compare -> assess
 
-    python -m sdoc_compare.pipeline --data ./data                       # build submission.json
-    python -m sdoc_compare.pipeline --data ./data --submit http://host:8080
-    python -m sdoc_compare.pipeline --data ./data --no-llm
+    python -m pipeline --data ./data                       # build submission.json
+    python -m pipeline --data ./data --submit http://host:8080
+    python -m pipeline --data ./data --no-llm
 
 Replaces the placeholder classifier in run_eval.py. `assess()` below is a minimal
 stand-in for D's real one; swap it out when that lands.
@@ -23,11 +23,10 @@ import time
 from collections import Counter
 from pathlib import Path
 from typing import Callable
-
-from .classifier import Classification, classify_email
-from .comparator import compare
-from .extractor import extract_fields
-from .models import ComparisonResult, DocumentExtraction
+from classifier import Classification, classify_email
+from sdoc_compare.comparator import compare
+from sdoc_compare.extractor import extract_fields
+from sdoc_compare.models import ComparisonResult, DocumentExtraction
 
 OTHER_DOCS = {"COMMERCIAL_INVOICE", "PACKING_LIST", "CERTIFICATE_OF_ORIGIN"}
 
@@ -71,7 +70,7 @@ def assess(res: ComparisonResult, si_x: DocumentExtraction, bl_x: DocumentExtrac
 def process_email(email: dict, data: Path, use_llm: bool = True,
                   reader: Callable[[str], dict] | None = None) -> tuple[dict, dict]:
     if reader is None:
-        from .dev_reader import read_document as reader     # swap for B's reader
+        from sdoc_compare.dev_reader import read_document as reader     # swap for B's reader
 
     def peek(rel: str) -> str:
         return (reader(str(data / rel)) or {}).get("text", "")[:1500]
@@ -150,7 +149,7 @@ def main():
     print(f"comparison statuses={dict(stat)} | decided_by={dict(by)} | processing errors={errs}")
 
     if a.submit:
-        from .run_eval import submit
+        from sdoc_compare.run_eval import submit
         s = submit(a.submit, sub)
         s1, s3 = s.get("stage1", {}), s.get("stage3", {})
         print(f"stage1 acc={s1.get('accuracy', 0):.3f} macroF1={s1.get('macro_f1', 0):.3f}")

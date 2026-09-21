@@ -32,13 +32,16 @@ def read_document(path: str) -> dict:
             return {"text": txt, "method": "pdftotext", "ok": bool(txt.strip())}
         if ext == ".xlsx":
             wb = openpyxl.load_workbook(str(p), read_only=True, data_only=True)
-            lines = []
-            for ws in wb:
-                for row in ws.iter_rows(values_only=True):
-                    cells = ["" if c is None else str(c) for c in row]
-                    if any(cells):
-                        lines.append("\t".join(cells))
-            return {"text": "\n".join(lines), "method": "openpyxl", "ok": bool(lines)}
+            try:
+                lines = []
+                for ws in wb:
+                    for row in ws.iter_rows(values_only=True):
+                        cells = ["" if c is None else str(c) for c in row]
+                        if any(cells):
+                            lines.append("\t".join(cells))
+                return {"text": "\n".join(lines), "method": "openpyxl", "ok": bool(lines)}
+            finally:
+                wb.close()
         if ext == ".docx":
             d = docx.Document(str(p))
             lines = [para.text for para in d.paragraphs if para.text.strip()]
