@@ -72,17 +72,23 @@ export async function readAttachment(
   }
 
   // Image-only page: the file is fine, there is just no text in it. Ask the
-  // vision reader if one was provided; otherwise report it for human review.
+  // vision reader if one was provided. A failing model must not turn a
+  // readable-by-a-human scan into a crash, so errors fall back to "unreadable".
   if (parsed.failure === 'no_text_layer' && options.vision) {
-    const seen = await options.vision({
-      path,
-      bytes,
-      contentType: CONTENT_TYPES[declared],
-    });
+    let seen: Awaited<ReturnType<NonNullable<ReadOptions['vision']>>> = null;
+    try {
+      seen = await options.vision({ path, bytes, contentType: CONTENT_TYPES[declared] });
+    } catch (err) {
+      return { ...parsed, readError: `${parsed.readError}; vision read failed: ${(err as Error).message}` };
+    }
     if (seen && seen.text.trim().length >= 40) {
+      if (options.trustVision) {
+        return { ...finish({ ...base, text: seen.text, method: 'vision' }), transcription: seen };
+      }
       return {
-        ...finish({ ...base, text: seen.text, method: 'vision' }),
-        confidence: seen.confidence,
+        ...parsed,
+        transcription: seen,
+        readError: 'scanned page, no text layer: AI transcription attached for the reviewer to confirm',
       };
     }
   }

@@ -86,24 +86,60 @@ describe('unreadable documents', () => {
   });
 });
 
-describe('vision fallback', () => {
-  it('uses the injected reader when there is no text layer', async () => {
-    const doc = await readAttachment('attachments/email_512_BL.pdf', await bytesOf('email_512_BL.pdf'), {
+describe('scanned pages', () => {
+  const SEEN = { text: 'BILL OF LADING (DRAFT)\nShipper: TEST CO\nPort of Loading: SINGAPORE', model: 'fake' };
+  const scan = () => bytesOf('email_512_BL.pdf');
+
+  it('by default keeps the scan for review, with the transcription attached', async () => {
+    const doc = await readAttachment('attachments/email_512_BL.pdf', await scan(), {
       vision: async ({ contentType }) => {
         expect(contentType).toBe('application/pdf');
-        return { text: 'BILL OF LADING (DRAFT)\nShipper: TEST CO\nPort of Loading: SINGAPORE', confidence: 0.9 };
+        return SEEN;
       },
+    });
+    // unverified AI output must not flow into an automatic comparison
+    expect(doc.readable).toBe(false);
+    expect(doc.failure).toBe('no_text_layer');
+    expect(doc.transcription?.text).toContain('Shipper: TEST CO');
+    expect(doc.readError).toMatch(/transcription attached/);
+  });
+
+  it('promotes the transcription only when asked to trust vision', async () => {
+    const doc = await readAttachment('attachments/email_512_BL.pdf', await scan(), {
+      vision: async () => SEEN,
+      trustVision: true,
     });
     expect(doc.readable).toBe(true);
     expect(doc.method).toBe('vision');
-    expect(doc.confidence).toBe(0.9);
+    expect(doc.text).toContain('Port of Loading: SINGAPORE');
   });
 
-  it('stays unreadable when the vision reader finds nothing', async () => {
-    const doc = await readAttachment('attachments/email_512_BL.pdf', await bytesOf('email_512_BL.pdf'), {
+  it('stays unreadable when the model sees nothing', async () => {
+    const doc = await readAttachment('attachments/email_512_BL.pdf', await scan(), {
       vision: async () => null,
     });
     expect(doc.readable).toBe(false);
-    expect(doc.failure).toBe('no_text_layer');
+    expect(doc.transcription).toBeUndefined();
+  });
+
+  it('reports a model failure instead of throwing', async () => {
+    const doc = await readAttachment('attachments/email_512_BL.pdf', await scan(), {
+      vision: async () => {
+        throw new Error('429 quota exceeded');
+      },
+    });
+    expect(doc.readable).toBe(false);
+    expect(doc.readError).toMatch(/vision read failed: 429 quota exceeded/);
+  });
+
+  it('never calls the model for a document that has a text layer', async () => {
+    let calls = 0;
+    await readAttachment('attachments/email_059_SI.pdf', await bytesOf('email_059_SI.pdf'), {
+      vision: async () => {
+        calls++;
+        return SEEN;
+      },
+    });
+    expect(calls).toBe(0);
   });
 });

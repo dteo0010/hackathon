@@ -11,9 +11,11 @@
     "read": "tsx scripts/read-one.ts",
     "coverage": "tsx scripts/coverage.ts",
     "test": "vitest run",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "scans": "tsx scripts/scans.ts"
   },
   "dependencies": {
+    "@google/genai": "^2.23.0",
     "exceljs": "^4.4.0",
     "mammoth": "^1.8.0",
     "unpdf": "^0.12.1"
