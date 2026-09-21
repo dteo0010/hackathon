@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SI / BL review</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <aside class="sidebar">
+    <h1>SI / BL check</h1>
+    <ul class="counts" id="counts"></ul>
+    <nav>
+      <a href="#/queue" data-nav="queue">Review queue</a>
+      <a href="#/report" data-nav="report">Report</a>
+    </nav>
+    <label class="field">Your name <span class="hint">for the audit trail</span>
+      <input id="reviewer" autocomplete="name">
+    </label>
+    <div id="job"></div>
+    <p class="source" id="source"></p>
+  </aside>
+  <main id="main"></main>
+  <div id="toast" role="status" aria-live="polite"></div>
+  <script type="module" src="app.js"></script>
+</body>
+</html>

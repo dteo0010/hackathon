@@ -26,3 +26,17 @@ __pycache__/
 # Environment variables / API keys
 .env
 .env.*
+
+# Frontend / Node
+node_modules/
+
+# Local frontend / demo data
+data/
+demo_data/
+
+# Runtime / generated files
+*-db.json
+*-db.json.tmp
+.outage_calls
+submission.json
+calibration.csv

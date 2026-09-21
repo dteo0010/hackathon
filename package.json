@@ -1,0 +1,26 @@
+{
+  "name": "sdoc-pipeline",
+  "version": "1.0.0",
+  "description": "Shipping document verification - SI vs BL check with human review",
+  "type": "module",
+  "private": true,
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "start": "node --no-deprecation src/server.js",
+    "pipeline": "node --no-deprecation src/cli.js",
+    "calibrate": "node --no-deprecation src/reliability/calibrate.js",
+    "demo": "node src/reliability/demo.js --reset",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "@tesseract.js-data/eng": "^1.0.0",
+    "exceljs": "^4.4.0",
+    "express": "^4.21.2",
+    "mammoth": "^1.8.0",
+    "pdfjs-dist": "^4.10.38",
+    "pngjs": "^7.0.0",
+    "tesseract.js": "^5.1.1"
+  }
+}
