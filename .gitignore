@@ -1,0 +1,8 @@
+node_modules/
+data/
+demo_data/
+*-db.json
+*-db.json.tmp
+.outage_calls
+submission.json
+calibration.csv
