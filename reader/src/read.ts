@@ -97,7 +97,10 @@ export async function readAttachment(
 
 async function readPdf(base: DocText, bytes: Uint8Array): Promise<DocText> {
   const { getDocumentProxy } = await import('unpdf');
-  const doc = await getDocumentProxy(bytes, { verbosity: 0 });
+  // pdf.js takes ownership of the buffer it parses and detaches it, which
+  // would leave the caller's bytes empty — and the vision fallback, which runs
+  // after this, would send the model a 0-byte file. Give it a copy.
+  const doc = await getDocumentProxy(bytes.slice(), { verbosity: 0 });
   const pages: string[] = [];
   for (let n = 1; n <= doc.numPages; n++) {
     const page = await doc.getPage(n);
@@ -149,7 +152,13 @@ function layoutPdfLines(items: PdfItem[]): string {
         // A word space is ~0.25 of the font height; a column gap is several
         // times that. Measured on this corpus: the tightest label/value gap is
         // "Shipper (Principal or Seller)" at 1.0x the height (8pt at 8pt type).
-        if (gap > Math.max(3, run.h * 0.6)) {
+        const wideGap = gap > Math.max(3, run.h * 0.6);
+        // A label too long for its column runs INTO the value column, so the
+        // value is printed on top of it: "Notify Party/Intermediate Consignee"
+        // overlaps its value by 24pt. Runs within one cell never overlap
+        // (beyond sub-point kerning), so an overlap is a column boundary too.
+        const overlap = gap < -Math.max(1, run.h * 0.25);
+        if (wideGap || overlap) {
           cells.push(cell.trim());
           cell = run.str;
         } else {
@@ -160,7 +169,7 @@ function layoutPdfLines(items: PdfItem[]): string {
       }
       cells.push(cell.trim());
       const filled = cells.filter(Boolean);
-      return filled.length === 2 ? `${filled[0]}: ${filled[1]}` : filled.join('\t');
+      return filled.length === 2 ? pair(filled[0], filled[1]) : filled.join('\t');
     })
     .join('\n');
 }
@@ -184,7 +193,7 @@ async function readXlsx(base: DocText, bytes: Uint8Array): Promise<DocText> {
       const cells = (row.values as unknown[]).slice(1).map(cellText).filter((c) => c !== '');
       if (!cells.length) return;
       // A two-cell row is nearly always label + value; keep them together.
-      lines.push(cells.length === 2 ? `${cells[0]}: ${cells[1]}` : cells.join('\t'));
+      lines.push(cells.length === 2 ? pair(cells[0], cells[1]) : cells.join('\t'));
     });
     sheets.push(lines.join('\n'));
   });
@@ -216,7 +225,7 @@ function flattenHtml(html: string): string {
         .filter((c) => c.length > 0);
       if (cells.length === 2) {
         const [label, value] = cells;
-        out.push(`${label.join(' ')}: ${value[0]}`);
+        out.push(pair(label.join(' '), value[0]));
         if (value.length > 1) out.push(`  ${value.slice(1).join('; ')}`);
       } else if (cells.length) {
         out.push(cells.map((c) => c.join('; ')).join('\t'));
@@ -235,6 +244,16 @@ function htmlLines(fragment: string): string[] {
     .split('\n')
     .map((l) => decodeEntities(l).replace(/\s+/g, ' ').trim())
     .filter(Boolean);
+}
+
+/**
+ * Join a two-cell row. It reads as "label: value" only if the first cell is a
+ * bare label; a first cell that already carries its own "label: value" (as in
+ * "B/L NUMBER: OOLU358… | BOOKING NO. PSGSE…") is two fields side by side,
+ * and joining with ": " would give "B/L NUMBER: OOLU358…: BOOKING NO. …".
+ */
+function pair(first: string, second: string): string {
+  return first.includes(':') ? `${first}\t${second}` : `${first}: ${second}`;
 }
 
 function decodeEntities(s: string): string {

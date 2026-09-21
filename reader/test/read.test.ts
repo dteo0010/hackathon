@@ -56,6 +56,18 @@ describe('pdf column layout', () => {
     expect(doc.text).toContain('Shipper (Principal or Seller): APRIL FINE PAPER TRADING');
   });
 
+  it('splits a label that overflows into the value column', async () => {
+    // the label ends 24pt past where the value starts: printed overlapping
+    for (const [file, value] of [
+      ['email_208_SI.pdf', 'CERIEX'],
+      ['email_351_BL.pdf', 'KTP CO., LTD'],
+      ['email_407_SI.pdf', 'NAGAPPA EXPORTS'],
+    ]) {
+      const doc = await read(file);
+      expect(doc.text).toContain(`Notify Party/Intermediate Consignee: ${value}`);
+    }
+  });
+
   it('keeps multi-column tables as tab-separated rows', async () => {
     const doc = await read('email_059_SI.pdf');
     expect(doc.text).toMatch(/CONTAINER NO\.\tDESCRIPTION\tGROSS WEIGHT \(KG\)/);
@@ -102,6 +114,21 @@ describe('scanned pages', () => {
     expect(doc.failure).toBe('no_text_layer');
     expect(doc.transcription?.text).toContain('Shipper: TEST CO');
     expect(doc.readError).toMatch(/transcription attached/);
+  });
+
+  it('hands the model the whole file, and leaves the caller\'s bytes intact', async () => {
+    // pdf.js detaches the buffer it parses; the reader must not pass that on
+    const bytes = await scan();
+    const size = bytes.byteLength;
+    let received = -1;
+    await readAttachment('attachments/email_512_BL.pdf', bytes, {
+      vision: async ({ bytes: b }) => {
+        received = b.byteLength;
+        return null;
+      },
+    });
+    expect(received).toBe(size);
+    expect(bytes.byteLength).toBe(size);
   });
 
   it('promotes the transcription only when asked to trust vision', async () => {
