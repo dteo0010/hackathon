@@ -63,6 +63,9 @@ test('full review flow', async () => {
     { category: 'BL_COMPARISON', status: 'NEEDS_REVIEW', reviewReason: 'missing_attachment', note: 'Requested BL' });
   assert.equal(over.body.record.state, 'REVIEWED');
 
+  const mism = (await call('GET', '/api/queue?scope=mismatch')).body.items.map((i) => i.emailId);
+  assert.ok(mism.includes('email_002') && mism.includes('email_008') && !mism.includes('email_001'));
+
   const detail = (await call('GET', '/api/emails/email_007')).body;
   assert.equal(detail.needsRoles, true);
   assert.equal(detail.rows.length, 7);

@@ -86,6 +86,7 @@ export function createApp({ inbox, store, runner, dataSource, isDemo = false, se
     let items;
     if (scope === 'attention') items = store.reviewQueue();
     else if (scope === 'reviewed') items = store.list(REVIEWED);
+    else if (scope === 'mismatch') items = store.list().filter((r) => r.outcome.status === 'MISMATCH');
     else items = store.list().filter((r) => categoryOf(r) === BL_COMPARISON || r.state === FAILED);
     res.json({ total: store.list().length, items: items.map((r) => ({
       emailId: r.emailId, subject: r.subject, state: r.state, status: r.outcome.status,

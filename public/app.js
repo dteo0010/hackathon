@@ -3,7 +3,7 @@
 
 const $ = (sel, el = document) => el.querySelector(sel);
 const main = $('#main');
-const state = { meta: null, summary: null, scope: 'attention', selected: null, roles: null, docTab: null, docsOnly: true, queueIds: [] };
+const state = { meta: null, summary: null, scope: 'attention', selected: null, roles: null, docTab: null, docsOnly: true, resultFilter: '', queueIds: [] };
 
 // Everything from emails/documents is untrusted text: always escape.
 const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -108,7 +108,7 @@ async function route() {
 window.addEventListener('hashchange', route);
 
 // ----------------------------------------------------------------------- queue
-const SCOPES = [['attention', 'Needs attention'], ['reviewed', 'Reviewed'], ['all', 'All document checks']];
+const SCOPES = [['attention', 'Needs attention'], ['mismatch', 'Mismatches'], ['reviewed', 'Reviewed'], ['all', 'All document checks']];
 
 async function renderQueue(id) {
   const q = await api('GET', `/api/queue?scope=${state.scope}`);
@@ -127,7 +127,7 @@ async function renderQueue(id) {
       ? 'No emails processed yet. Use Process inbox (or Load demo inbox) in the sidebar.'
       : state.scope === 'attention'
         ? 'Nothing is waiting for review. Every processed email was checked automatically or has been reviewed. See the Report for results.'
-        : 'No emails here yet.';
+        : state.scope === 'mismatch' ? 'No mismatches found.' : 'No emails here yet.';
     body = `<p class="banner ${q.total && state.scope === 'attention' ? 'ok' : 'info'}">${msg}</p>`;
   } else {
     body = `<div class="split">
@@ -366,13 +366,18 @@ async function renderReport() {
     main.innerHTML = '<h2>Report</h2><p class="banner info">No emails processed yet. Use Process inbox in the sidebar.</p>';
     return;
   }
-  const rows = state.docsOnly ? r.rows.filter((x) => x.category === 'BL_COMPARISON' || x.state === 'FAILED') : r.rows;
+  let rows = state.docsOnly ? r.rows.filter((x) => x.category === 'BL_COMPARISON' || x.state === 'FAILED') : r.rows;
+  if (state.resultFilter) rows = rows.filter((x) => x.result === state.resultFilter);
   const details = (x) => x.mismatches.length
     ? `<ul class="mm">${x.mismatches.map((m) => `<li>${esc(label(m.field))}: SI <b>${esc(m.si ?? '?')}</b> / BL <b>${esc(m.bl ?? '?')}</b></li>`).join('')}</ul>`
     : esc(x.details);
   main.innerHTML = `<h2>Report</h2>
     <div class="row" style="margin:.5rem 0 1rem">
       <label class="row"><input type="checkbox" id="docsOnly" style="width:auto" ${state.docsOnly ? 'checked' : ''}> Document checks only</label>
+      <label class="row">Result
+        <select id="resultFilter" style="width:auto">${[['', 'All'], ['OK', 'OK'], ['MISMATCH', 'Mismatch'], ['NEEDS_REVIEW', 'Needs review'], ['AWAITING_DOCS', 'Waiting for documents'], ['FAILED', 'Failed']]
+          .map(([v, l]) => `<option value="${v}" ${state.resultFilter === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
+      <span class="meta">${rows.length} shown</span>
       <a class="btn" href="/api/submission">Download submission.json</a>
       ${state.summary.canScore ? '<button class="btn primary" id="score">Score with organisers\' server</button>' : ''}
     </div>
@@ -386,6 +391,7 @@ async function renderReport() {
       <td>${details(x)}</td><td>${x.reviewed ? 'Yes' : ''}</td></tr>`).join('')}</tbody></table></div>
     <div id="scoreOut"></div>`;
   $('#docsOnly').addEventListener('change', (e) => { state.docsOnly = e.target.checked; renderReport(); });
+  $('#resultFilter').addEventListener('change', (e) => { state.resultFilter = e.target.value; renderReport(); });
   $('#score')?.addEventListener('click', (e) => act(e.target, async () => {
     const res = await api('POST', '/api/score', { note: prompt('Note for this score (what changed?)') || null });
     toast(`Scored: ${res.summary.final.toFixed(3)}`);
