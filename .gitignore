@@ -1,3 +1,11 @@
+# Node / reader
+node_modules/
+lib/
+dist/
+data/
+.DS_Store
+*.log
+
 # Python virtual environment
 .venv/
 venv/
@@ -29,11 +37,7 @@ __pycache__/
 .env.*
 !.env.example
 
-# Frontend / Node
-node_modules/
-
 # Local frontend / demo data
-data/
 demo_data/
 
 # Runtime / generated files
